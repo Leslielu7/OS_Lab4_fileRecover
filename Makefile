@@ -7,7 +7,7 @@ all: nyufile
 
 nyufile: nyufile.o 
 
-nyufile.o: nyufile.c
+nyufile.o: nyufile.c nyufile.h
 
 
 

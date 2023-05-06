@@ -28,10 +28,13 @@ char * return_filename (unsigned char * ptr);
 int main(int argc, char * argv[]) {
     char  * optstr = "ilrRs";
     int opt;
-   int fd;
+    int fd;
+    int is_r = 0;
+    int is_R = 0;
+  
 
     char * usg_info ="Usage: ./nyufile disk <options>\n  -i                     Print the file system information.\n  -l                     List the root directory.\n  -r filename [-s sha1]  Recover a contiguous file.\n  -R filename -s sha1    Recover a possibly non-contiguous file.\n";
-    if(argc < 3 || argc > 6 //|| (getopt(argc, argv, optstr))==-1
+    if(argc < 3 || argc > 6
        ){
         fprintf(stderr, "%s",usg_info);
         exit(EXIT_FAILURE);
@@ -58,21 +61,21 @@ int main(int argc, char * argv[]) {
     }
     
     BootEntry* boot_entry = (BootEntry*) addr;
-    //munmap(addr, sizeof(BootEntry));
+   
     unsigned int fat_offset = boot_entry->BPB_BytsPerSec * boot_entry->BPB_RsvdSecCnt;
-   // int fat_size = boot_entry->BPB_BytsPerSec*boot_entry->BPB_FATSz32*boot_entry->BPB_NumFATs;//size of a fat = no. of cluster
+  
     int *fat_ptr = (int*)((unsigned char*)addr + fat_offset);
     
     unsigned int data_area_offset = boot_entry->BPB_BytsPerSec * (boot_entry->BPB_RsvdSecCnt + boot_entry->BPB_NumFATs * boot_entry->BPB_FATSz32);
  
-    DirEntry* dir_entries = (DirEntry*) ((unsigned char*)addr + data_area_offset);
+
     
     //cluster no. of root directory
     unsigned int cluster = boot_entry->BPB_RootClus;
-    if(cluster!=2){ //rootcluster does not start at cluster 2
-        dir_entries = (DirEntry*)
+
+        DirEntry*  dir_entries = (DirEntry*)
         ((unsigned char*)addr + data_area_offset + (cluster-2) * boot_entry->BPB_BytsPerSec * boot_entry->BPB_SecPerClus);
-    }
+
     
     if (dir_entries == NULL) {
         printf("Failed to initialize dir_entries\n");
@@ -149,10 +152,7 @@ int main(int argc, char * argv[]) {
                             printf("unallocated or bad cluster\n");
                             break;
                         }
-//                        if(fat[cluster]==0x00000000 || fat[cluster]==0x0ffffff7){//unallocated or bad cluster
-//                            printf("unallocated or bad cluster\n");
-//                            break;
-//                        }
+           
                         
                         dir_entries = (DirEntry*) ((unsigned char*)addr + data_area_offset + (cluster-2) * boot_entry->BPB_BytsPerSec * boot_entry->BPB_SecPerClus);
                         }
@@ -167,8 +167,10 @@ int main(int argc, char * argv[]) {
                     exit(EXIT_FAILURE);
                 }
                 else{
+                    
                     if(argc == optind+3 && strcmp(argv[optind+1],"-s")==0){
                         targetfile = argv[optind];
+                        is_r = 1;
                         break;
                     }
                
@@ -198,7 +200,7 @@ int main(int argc, char * argv[]) {
                                     if(done){
                                         printf("%s: multiple candidates found\n",targetfile);
                                         mul = 1;
-                                        break;
+                                        exit(EXIT_SUCCESS);
                                     }
                                     
                                     recover_dir_entry = cnt_entries;
@@ -219,17 +221,13 @@ int main(int argc, char * argv[]) {
                     
                     if(!done){
                         printf("%s: file not found\n",targetfile);
-                        
                     }else if (!mul){//mul=0
-                        dir_entries = (DirEntry*) ((unsigned char*)addr + data_area_offset);
-//                        if(recover_dir_entry!=-1){
+                        dir_entries = (DirEntry*)
+                        ((unsigned char*)addr + data_area_offset + (cluster-2) * boot_entry->BPB_BytsPerSec * boot_entry->BPB_SecPerClus);
+                     
                         dir_entries += recover_dir_entry;
                         
-//                    }//
-//                        else{
-//                            printf("error in recover_dir_entry:%d\n",recover_dir_entry);
-//                            break;
-//                        }
+       
                         dir_entries->DIR_Name[0] = targetfile[0];
                     
                         unsigned int filesize = dir_entries->DIR_FileSize;
@@ -238,15 +236,15 @@ int main(int argc, char * argv[]) {
                        
                         //BPB_FATSz32: the size of each FAT in terms of the number of sectors.
                         unsigned int size_per_fat = boot_entry->BPB_BytsPerSec * boot_entry->BPB_FATSz32;
-                    
+                        
                         if(filesize<=clusterbyte && filesize!=0){
-                            //printf("no._cluster:%d\n",65536*dir_entries->DIR_FstClusHI + dir_entries->DIR_FstClusLO);
+                            
                             
                             for(int i=0;i<boot_entry->BPB_NumFATs;i++){//iterate all FATs, single fat size = single sector size
                                 *((int *)((unsigned char *)fat_ptr + (index*sizeof(int)+i*size_per_fat))) = 0x0FFFFFF8;
                               }
                         }
-                        else{  // filesize > clusterbyte
+                        else if(filesize!=0){  // filesize > clusterbyte
                             while(filesize>clusterbyte){
                                 for(int i=0;i<boot_entry->BPB_NumFATs;i++){//update the same no. of cluster for each FAT
                                     *((int *)((unsigned char *)fat_ptr + (index*sizeof(int)+i*size_per_fat))) = index+1;
@@ -270,17 +268,13 @@ int main(int argc, char * argv[]) {
                     fprintf(stderr, "%s",usg_info);
                     exit(EXIT_FAILURE);
                 }
-//                else if(opt =='s'// || (opt=getopt(argc, argv, optstr))!=-1
-//                         ){
-//                    if(optarg==NULL){
-//                      printf("s is null\n");
-////                        fprintf(stderr, "Recover a possibly non-contiguous file.");
-////                        exit(EXIT_FAILURE);
-//                    }
-//                else{
-//                    printf("this is Rs");
-//                   // printf("optarg:%s\n",optarg);
-//                }
+                else {
+                    if(argc == optind+3 && strcmp(argv[optind+1],"-s")==0){
+                        targetfile = argv[optind];
+                        is_r = 1;
+                        break;
+                    }
+                }
                 break;
 
             case 's':
@@ -289,18 +283,13 @@ int main(int argc, char * argv[]) {
                     fprintf(stderr, "%s",usg_info);
                     exit(EXIT_FAILURE);
                 }
-                else{
+                else if(is_r == 1){
                     char * checksum = argv[optind];//checksum argument after -s
         //start
                     int num_entries_per_cluster = boot_entry->BPB_BytsPerSec*boot_entry->BPB_SecPerClus/sizeof(DirEntry);
-                 
                     int done = 0;//found at least one filename match
-                  //  int mul = 0;// found multiple filename match
-                  //  int recover_dir_entry = -1;// dir entry of the first filename match
-                    
                     while(1){//iterate root directory entries in FAT
                         int cnt_entries = 0;
-                        
                         while(cnt_entries<num_entries_per_cluster){//iterate file & directory in this cluster
                             if( dir_entries->DIR_Name[0]!=0xe5 ){//skipped entries
                                 dir_entries++;
@@ -315,22 +304,12 @@ int main(int argc, char * argv[]) {
                                 }
                                 if(i==(int)strlen(targetfile)+1){//filename matched
                                     
-                                    
                                     // get this file's content cluster
                                     unsigned int index = 65536*dir_entries->DIR_FstClusHI + dir_entries->DIR_FstClusLO;
                                     unsigned int clusterbyte = boot_entry->BPB_BytsPerSec * boot_entry->BPB_SecPerClus;
                                     // checksum to check content, continuously
-                                     //unsigned char *SHA1(const unsigned char *d, size_t n, unsigned char *md);
-                                 //   printf("index:%d\n",index);
                                     unsigned char* cluster_entries = (unsigned char*)addr + data_area_offset + (index-2)*clusterbyte;
                                     unsigned int filesize = dir_entries->DIR_FileSize;
-                                    
-                                 //   printf("content:");
-//                                    for (i = 0; i < SHA_DIGEST_LENGTH; i++) {
-//                                          printf("%c", cluster_entries[i]);
-//                                      }
-//                                      printf("\n");
-                                    
                                     unsigned char * md = malloc(SHA_DIGEST_LENGTH);
                                     unsigned char * file_content = SHA1(cluster_entries,filesize,md);
            
@@ -348,14 +327,111 @@ int main(int argc, char * argv[]) {
                                         i++;
                                     }
                                     if(i==SHA_DIGEST_LENGTH){//checksum verified
-//                                        printf("same");
+
                                         dir_entries->DIR_Name[0] = targetfile[0];
                                        
                                         //BPB_FATSz32: the size of each FAT in terms of the number of sectors.
                                         int size_per_fat = boot_entry->BPB_BytsPerSec * boot_entry->BPB_FATSz32;
                                     
                                         if(filesize<=clusterbyte && filesize!=0){
-                                            //printf("no._cluster:%d\n",65536*dir_entries->DIR_FstClusHI + dir_entries->DIR_FstClusLO);
+                                           
+                                            for(int i=0;i<boot_entry->BPB_NumFATs;i++){//iterate all FATs, single fat size = single sector size
+                                                *((int *)((unsigned char *)fat_ptr + (index*sizeof(int)+i*size_per_fat))) = 0x0FFFFFF8;
+                                              }
+                                        }
+                                        else{  // filesize > clusterbyte
+                                            while(filesize>clusterbyte){
+                                                for(int i=0;i<boot_entry->BPB_NumFATs;i++){//update the same no. of cluster for each FAT
+                                                    *((int *)((unsigned char *)fat_ptr + (index*sizeof(int)+i*size_per_fat))) = index+1;
+                                                }
+                                                index++;
+                                                filesize-=clusterbyte;
+                                            }
+                                            for(int i=0;i<boot_entry->BPB_NumFATs;i++){//update the same no. of cluster for each FAT
+                                                *((int *)((unsigned char *)fat_ptr + (index*sizeof(int)+i*size_per_fat))) = 0x0FFFFFF8;
+                                            }
+                                        }
+                                        printf("%s: successfully recovered with SHA-1\n",targetfile);
+                                        done = 1;
+                                        break;
+                                    }
+                                    //if not same, try next file
+                                }
+                            }
+                            dir_entries++;
+                            cnt_entries++;
+                         }
+                        if(*(fat_ptr + cluster) >=0x0ffffff8){//the last cluster of root directory
+                            break;
+                        }
+                        cluster = *(fat_ptr + cluster);// move to next cluster
+                        dir_entries = (DirEntry*) ((unsigned char*)addr + data_area_offset + (cluster-2) * boot_entry->BPB_BytsPerSec * boot_entry->BPB_SecPerClus);
+                        }
+                    
+                    if(!done){
+                        printf("%s: file not found\n",targetfile);
+                    }
+                }else if(is_R == 1){
+                    //is_R
+                    printf("this is R");
+                    char * checksum = argv[optind];//checksum argument after -s
+        //start
+                    int num_entries_per_cluster = boot_entry->BPB_BytsPerSec*boot_entry->BPB_SecPerClus/sizeof(DirEntry);
+                    int done = 0;//found at least one filename match
+                    while(1){//iterate root directory entries in FAT
+                        int cnt_entries = 0;
+                        while(cnt_entries<num_entries_per_cluster){//iterate file & directory in this cluster
+                            if( dir_entries->DIR_Name[0]!=0xe5 ){//skipped entries
+                                dir_entries++;
+                                cnt_entries++;
+                                continue;
+                            }
+                            else if(dir_entries->DIR_Attr==0x20){ //file
+                                char * try = return_filename(dir_entries->DIR_Name);
+                                int i=1;
+                                while(targetfile[i] == try[i]){
+                                    i++;
+                                }
+                                if(i==(int)strlen(targetfile)+1){//filename matched
+                                    
+                                    // get this file's content cluster
+                                    unsigned int index = 65536*dir_entries->DIR_FstClusHI + dir_entries->DIR_FstClusLO;
+                                    unsigned int clusterbyte = boot_entry->BPB_BytsPerSec * boot_entry->BPB_SecPerClus;
+                                    // checksum to check content, uncontinuously
+                                    
+                                    unsigned char* cluster_entries = (unsigned char*)addr + data_area_offset + (index-2)*clusterbyte;
+                                    unsigned int filesize = dir_entries->DIR_FileSize;
+                                    unsigned char * md = malloc(SHA_DIGEST_LENGTH);
+                                    unsigned int num_cluster = (filesize%clusterbyte == 0)? filesize%clusterbyte:filesize%clusterbyte+1;
+                                    printf("filesize:%d",filesize);
+                                    printf("clusterbyte:%d",clusterbyte);
+                                    printf("num_cluster:%d",num_cluster);
+                                 
+                                    
+                                    unsigned char * file_content = SHA1(cluster_entries,filesize,md);
+           
+                                    if(file_content == NULL){
+                                        printf("file_content failed\n");
+                                    }
+                                    
+                                    int i=0;
+                                    while(i<SHA_DIGEST_LENGTH){
+                                        char str[3];
+                                        sprintf(str, "%02x", md[i]);
+                                        if(str[0]!=checksum[i*2] || str[1]!=checksum[i*2+1]){
+                                            break;
+                                        }
+                                        i++;
+                                    }
+                                    if(i==SHA_DIGEST_LENGTH){//checksum verified
+//
+                                        dir_entries->DIR_Name[0] = targetfile[0];
+                                       
+                                        //BPB_FATSz32: the size of each FAT in terms of the number of sectors.
+                                        int size_per_fat = boot_entry->BPB_BytsPerSec * boot_entry->BPB_FATSz32;
+                                    
+                                        if(filesize<=clusterbyte && filesize!=0){
+                                            
                                             
                                             for(int i=0;i<boot_entry->BPB_NumFATs;i++){//iterate all FATs, single fat size = single sector size
                                                 *((int *)((unsigned char *)fat_ptr + (index*sizeof(int)+i*size_per_fat))) = 0x0FFFFFF8;
@@ -393,12 +469,13 @@ int main(int argc, char * argv[]) {
                     if(!done){
                         printf("%s: file not found\n",targetfile);
                     }
+                    
                 }
             break;
         }
-        //printf("optarg:%s\n",optarg);
+       
     }
-    //free(targetfile);
+    
 }
 
 void print_filename(unsigned char * ptr, int isDir){
@@ -425,14 +502,14 @@ char * return_filename (unsigned char * ptr){
             if(i==8){
                 result[result_ptr] = '.';
                 result_ptr++;
-                //printf(".");
+                
             }
             result[result_ptr] = ptr[i];
             result_ptr++;
-            //printf("%c",ptr[i]);
+            
         }
     }
     result[result_ptr] = '\0';
-    //printf("result:%s\n",result);
+   
     return result;
 }
